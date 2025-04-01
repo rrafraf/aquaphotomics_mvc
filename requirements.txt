@@ -1,0 +1,35 @@
+# Python compatible packages for Windows 10/11
+# Using older versions known to work with aquaphotomics_21.05.py
+matplotlib==3.5.3
+numpy==1.21.6
+scipy==1.7.3
+Pillow==9.2.0
+pyserial==3.5
+mplcursors==0.5.2
+mpmath==1.2.1
+
+# Dependencies that will be automatically resolved to compatible versions
+# cycler
+# kiwisolver
+# pyparsing
+# python-dateutil
+# six
+
+# Windows Setup Instructions:
+# 1. Download Python 3.7 installer from https://www.python.org/downloads/release/python-3712/
+#    - Specifically download "Windows x86-64 executable installer" for 64-bit Windows
+#    - Ensure you check "Add Python to PATH" during installation
+#
+# 2. The setup.ps1 script will handle creating a virtual environment and installing
+#    all the required packages listed above
+#
+# 3. Make sure the application has an "images" folder in the same directory with 
+#    all required icon files (openfile.png, eraser.png, user.png, etc.)
+#
+# 4. For serial port access, you might need to:
+#    - Run the application as Administrator the first time
+#    - Check Device Manager to ensure the serial ports are properly recognized
+
+# Directory structure requirements:
+# - images/ directory with various .png and .ico files
+#   (including openfile.png, eraser.png, user.png, etc.)
