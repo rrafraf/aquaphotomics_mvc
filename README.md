@@ -209,6 +209,8 @@ flowchart TD
 
 ## Button-to-Function Mapping
 
+For a detailed breakdown of which UI element calls which function, and a high-level overview of the function's purpose, see the [UI Button Handler Mapping](./docs/ui_button_handler_mapping.md).
+
 | Button | Function | Description |
 |--------|----------|-------------|
 | Check COM | check_com() | Verifies the selected COM port |
