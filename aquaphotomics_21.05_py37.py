@@ -97,13 +97,12 @@ import csv
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.backends._backend_tk import ToolTip
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 from matplotlib.backend_tools import ToolBase
 from matplotlib.backend_tools import ToolBase, ToolToggleBase
-from matplotlib.ticker import MultipleLocator, AutoMinorLocator, AutoLocator, FormatStrFormatter
+from matplotlib.ticker import MultipleLocator, AutoLocator, FormatStrFormatter
 from scipy.interpolate import interp1d
 from scipy.interpolate import CubicSpline
 from functools import partial
@@ -114,6 +113,43 @@ import mplcursors
 import mpmath as mp
 # mp.prec = 53 # binary -- in bit for mpf type float
 # mp.dps = 15 # decimal
+
+# Modern implementation of ToolTip since matplotlib removed it
+class ToolTip:
+    """
+    Custom ToolTip class to replace the deprecated matplotlib ToolTip.
+    """
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip = None
+        self.widget.bind("<Enter>", self.on_enter)
+        self.widget.bind("<Leave>", self.on_leave)
+    
+    def on_enter(self, event=None):
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        
+        # Create top level window
+        self.tooltip = tk.Toplevel(self.widget)
+        # Remove window decorations
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+        
+        # Create label
+        label = tk.Label(self.tooltip, text=self.text, background="#ffffe0", relief="solid", borderwidth=1)
+        label.pack()
+    
+    def on_leave(self, event=None):
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
+    
+    @staticmethod
+    def createToolTip(widget, text):
+        """Static method to create a tooltip for a widget."""
+        return ToolTip(widget, text)
 
 
 warnings.simplefilter("ignore")

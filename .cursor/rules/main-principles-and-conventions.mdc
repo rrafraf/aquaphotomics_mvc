@@ -1,0 +1,201 @@
+---
+description: Aquaphotomics Application - Development Principles
+globs: 
+alwaysApply: false
+---
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Aquaphotomics Application - Development Principles
+
+## Dependency Management
+
+### ❌ NEVER Create Dummy Modules
+
+- **DO NOT** create dummy or fake implementations of required packages to mask dependency issues.
+- **DO NOT** silently handle missing dependencies by creating placeholder modules.
+- Using dummy implementations leads to confusing behavior, hard-to-diagnose issues, and makes debugging nearly impossible.
+
+### ✅ Proper Dependency Management
+
+- Define all dependencies in `requirements.txt` with appropriate version constraints
+- Use the launcher script to check for missing dependencies and install them properly
+- If a dependency can't be installed automatically, provide clear error messages and instructions for manual installation
+- Let the application fail explicitly with clear error messages if critical dependencies are missing
+
+## Code Structure
+
+- Maintain a modular architecture with separate library files in the `lib/` directory
+- Follow clear initialization order in the main application
+- Use classes with proper encapsulation and separation of concerns
+- Keep UI code, data processing, and device communication separate
+
+## File Organization
+
+- `aquaphotomics_21.05.py` - Main application file
+- `lib/` - Directory for modular components
+  - `__init__.py` - Package initialization
+  - `serial_connection.py` - Device communication module
+  - `data_processing.py` - Data processing and analysis module
+  - `visual_components.py` - UI and visualization components
+- `requirements.txt` - Package dependencies
+- `setup.ps1` - Environment setup script
+- `launcher.ps1` - Application launcher with proper dependency checking
+- `images/` - Directory for UI images and icons
+
+## Configuration and Setup
+
+- Use the launcher script to properly set up the environment
+- Verify all dependencies are properly installed
+- Use virtual environments to isolate the application's dependencies
+- Provide clear error messages if something is misconfigured
+
+## Python Compatibility
+
+- Support a range of Python versions rather than requiring a specific version
+- Avoid version-specific language features where possible
+- When compatibility issues arise, detect and report them clearly
+- Test with multiple Python versions to ensure compatibility
+
+## Application Structure
+
+### Entry Point
+
+The main entry point is `aquaphotomics_app.py`, which initializes and runs the application.
+
+### Directory Structure
+
+```
+aquaphotomics/
+├── app/                    # Main application package
+│   ├── __init__.py         # Package initialization
+│   ├── app.py              # Main application class
+│   ├── models/             # Domain models
+│   │   ├── __init__.py
+│   │   ├── channel.py      # Channel data model
+│   │   ├── channel_collection.py  # Collection of channels
+│   │   ├── observable.py   # Observable pattern implementation
+│   │   └── user.py         # User model
+│   ├── services/           # External services
+│   │   ├── __init__.py
+│   │   ├── device_service.py    # Hardware communication 
+│   │   └── visualization_service.py  # Data visualization
+│   ├── controllers/        # Business logic
+│   │   ├── __init__.py
+│   │   └── device_controller.py  # Device control
+│   └── views/              # UI components
+│       ├── __init__.py
+│       └── channel_table_view.py  # Channel table UI
+├── images/                 # UI icons and images
+├── aquaphotomics_app.py    # Application entry point
+├── requirements.txt        # Python dependencies
+├── setup.ps1               # Setup script
+└── launcher.ps1            # Application launcher
+```
+
+## Architecture
+
+The application follows the Model-View-Controller (MVC) and Model-View-ViewModel (MVVM) architectural patterns for clean separation of concerns:
+
+### Core Architectural Principles
+
+1. **Separation of Concerns**: UI, business logic, and data are cleanly separated
+2. **Observable Pattern**: Data binding between models and views
+3. **Single Responsibility**: Each class has a clear purpose
+4. **Dependency Injection**: Components receive dependencies rather than creating them
+
+### Component Layers
+
+1. **Models**: Domain objects representing core business entities
+2. **Views**: UI components that display information and capture user input
+3. **Controllers**: Coordinate between views and models
+4. **Services**: Handle complex operations and external interactions
+
+## Module Details
+
+### Models
+
+#### Observable (`observable.py`)
+
+Implements the Observer pattern for data binding:
+
+- `Observable`: Base class for objects that notify observers
+- `ObservableProperty`: Descriptor for observable properties that notify when changed
+- `ObservableList`: Observable collection that notifies when elements change
+
+#### Channel (`channel.py`)
+
+Represents a single measurement channel with properties like:
+- Wavelength
+- DAC/ADC values
+- Timing parameters
+- LED status
+
+#### ChannelCollection (`channel_collection.py`)
+
+Manages a collection of channels with functionality to:
+- Add/remove channels
+- Find channels by index or wavelength
+- Filter channels (e.g., get enabled channels)
+
+#### User (`user.py`)
+
+Stores user information and preferences:
+- User name
+- Data file path
+- Active status
+
+### Services
+
+#### DeviceService (`device_service.py`)
+
+Handles low-level communication with the hardware:
+- Serial port connection management
+- Command formatting and parsing
+- Error handling for device communication
+- Reading/writing channel parameters
+- Controlling LEDs and measuring ADC values
+
+#### VisualizationService (`visualization_service.py`)
+
+Manages data visualization:
+- Creating and managing plots
+- Plotting measurement data in linear and polar formats
+- Creating DAC-ADC relationship plots
+- Managing figure updates and interactions
+
+### Controllers
+
+#### DeviceController (`device_controller.py`)
+
+Coordinates between UI and device:
+- Manages device connection state
+- Handles channel operations
+- Controls measurement processes
+- Updates models with device data
+- Provides status information to UI
+
+### Views
+
+#### ChannelTableView (`channel_table_view.py`)
+
+Displays channel data in a table format:
+- Renders channel properties in a grid
+- Handles user input for channel parameters
+- Provides buttons for channel operations
+- Updates when model data changes via observers
+
+## Main Application (`app.py`)
+
+The `AquaphotomicsApp` class:
+- Initializes all components
+- Creates the UI
+- Handles global application events
+- Coordinates between components
+- Manages user interactions with the application
+
+---
+
+**Note:** This application requires specific hardware to fully function. Without the device connected, the UI will still load but device operations will not be available.
