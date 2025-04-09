@@ -14,6 +14,7 @@ import sys
 import time
 import csv
 import warnings
+# import configparser # No longer needed here
 import tkinter as tk
 import tkinter.messagebox as tk_msg
 import tkinter.filedialog as tk_fd
@@ -37,6 +38,9 @@ from typing import List, Dict, Any, Optional, Tuple, Union
 warnings.simplefilter("ignore")
 matplotlib.use("TkAgg")
 matplotlib.rcParams["toolbar"] = "toolmanager"
+
+# Import the ConfigManager
+from config_manager import ConfigManager
 
 # Import the appropriate serial port detection based on the OS
 if os.name == "linux":
@@ -269,6 +273,137 @@ class SerialDevice:
         
         # Check if toggle was successful (response should be ':00\r')
         return response == b':00\r'
+
+    def is_connected(self) -> bool:
+        """Check if the device is currently connected."""
+        return self.connect_status
+
+#------------------------------------------------------------------------------
+# MOCK DEVICE CLASS (for testing without hardware)
+#------------------------------------------------------------------------------
+class MockSerialDevice:
+    """Simulates the SerialDevice for testing without actual hardware."""
+
+    def __init__(self, mock_port_name="MOCK_COM"):
+        """Initialize the mock device."""
+        self.mock_port_name = mock_port_name
+        self.port = None
+        self.connect_status = False
+        # Simulate some internal state if needed, e.g., DAC values per channel
+        self._channel_dac = [1000] * 16 # Default DAC values
+        self._channel_ton = [100] * 16
+        self._channel_toff = [100] * 16
+        self._channel_samples = [10] * 16
+        self._channel_dac_pos = [2000] * 16
+        self._led_state = [0] * 16
+        print(f"MockSerialDevice initialized (port name: {self.mock_port_name})")
+
+    def scan_ports(self) -> List[str]:
+        """Return a list including the mock port name."""
+        # Optionally, could try to get real ports and add the mock one
+        # from serial.tools.list_ports import comports
+        # real_ports = [p.device for p in comports()]
+        # return real_ports + [self.mock_port_name]
+        print(f"MockSerialDevice: scan_ports() -> returning ['{self.mock_port_name}', 'COM3', 'COM4']") # Example
+        return [self.mock_port_name, "COM3", "COM4"] # Hardcoded example for now
+
+    def connect(self, port_name: str) -> bool:
+        """Simulate connection. Only succeeds if the mock port name is used."""
+        print(f"MockSerialDevice: connect('{port_name}') called.")
+        if port_name == self.mock_port_name:
+            self.port = port_name
+            self.connect_status = True
+            print("MockSerialDevice: Connection successful.")
+            return True
+        else:
+            print(f"MockSerialDevice: Connection failed (Port '{port_name}' is not the mock port '{self.mock_port_name}').")
+            self.connect_status = False
+            return False
+
+    def disconnect(self) -> None:
+        """Simulate disconnection."""
+        print("MockSerialDevice: disconnect() called.")
+        self.connect_status = False
+        self.port = None
+
+    def ensure_connected(self) -> bool:
+        """Check simulated connection status."""
+        return self.connect_status
+
+    def read_signal_from_channel(self, channel: int, signal_type: int) -> int:
+        """Simulate reading signals based on internal state."""
+        if not self.ensure_connected():
+            raise DataProcessingError("MockDevice not connected")
+        if not (0 <= channel < 16):
+            raise DataProcessingError(f"MockDevice invalid channel: {channel}")
+
+        value = 0
+        if signal_type == 0: # DAC value
+            value = self._channel_dac[channel]
+        elif signal_type == 1: # Ton
+            value = self._channel_ton[channel]
+        elif signal_type == 2: # Toff
+            value = self._channel_toff[channel]
+        elif signal_type == 3: # Samples
+            value = self._channel_samples[channel]
+        elif signal_type == 4: # DAC position
+            value = self._channel_dac_pos[channel]
+        else:
+             raise DataProcessingError(f"MockDevice invalid signal_type: {signal_type}")
+
+        print(f"MockSerialDevice: read_signal(channel={channel}, type={signal_type}) -> returning {value}")
+        return value
+
+    def write_signal_to_channel(self, channel: int, signal_type: int, value: int) -> bool:
+        """Simulate writing signals, updating internal state."""
+        if not self.ensure_connected():
+             raise DataProcessingError("MockDevice not connected")
+        if not (0 <= channel < 16):
+            raise DataProcessingError(f"MockDevice invalid channel: {channel}")
+
+        print(f"MockSerialDevice: write_signal(channel={channel}, type={signal_type}, value={value})")
+        if signal_type == 0: # DAC value
+            self._channel_dac[channel] = value
+        elif signal_type == 1: # Ton
+            self._channel_ton[channel] = value
+        elif signal_type == 2: # Toff
+            self._channel_toff[channel] = value
+        elif signal_type == 3: # Samples
+            self._channel_samples[channel] = value
+        elif signal_type == 4: # DAC position
+            self._channel_dac_pos[channel] = value
+        else:
+             raise DataProcessingError(f"MockDevice invalid signal_type: {signal_type}")
+
+        return True # Assume write is always successful
+
+    def measure_channel(self, channel: int) -> Tuple[int, int, int]:
+        """Simulate measuring ADC values, vaguely based on DAC setting."""
+        if not self.ensure_connected():
+            raise DataProcessingError("MockDevice not connected")
+        if not (0 <= channel < 16):
+             raise DataProcessingError(f"MockDevice invalid channel: {channel}")
+
+        # Simulate ADC values based on DAC - very simplistic!
+        dac = self._channel_dac[channel]
+        # Example: ADC1 roughly proportional to DAC, ADC2 slightly different, BG low random
+        adc_pulse = max(0, min(50000, int(dac * 10 + np.random.randint(-500, 500))))
+        adc2_pulse = max(0, min(50000, int(dac * 9.5 + np.random.randint(-600, 600))))
+        adc_background = np.random.randint(50, 200)
+
+        print(f"MockSerialDevice: measure_channel(channel={channel}) -> DAC={dac}, returning ({adc_pulse}, {adc2_pulse}, {adc_background})")
+        return (adc_pulse, adc2_pulse, adc_background)
+
+    def toggle_led(self, channel: int, state: int) -> bool:
+        """Simulate toggling an LED."""
+        if not self.ensure_connected():
+             raise DataProcessingError("MockDevice not connected")
+        if not (0 <= channel < 16):
+             raise DataProcessingError(f"MockDevice invalid channel: {channel}")
+
+        print(f"MockSerialDevice: toggle_led(channel={channel}, state={state})")
+        self._led_state[channel] = state
+        return True
 
 #------------------------------------------------------------------------------
 # DATA PROCESSING FUNCTIONS
@@ -812,15 +947,20 @@ class UserDialog(tk_sd.Dialog):
 class ConnectionDialog(tk_sd.Dialog):
     """Dialog for setting up device connection."""
     
-    def __init__(self, master, device):
+    def __init__(self, master, device, mock_port_name="MOCK_COM", is_mock_enabled=False):
         """
         Initialize the connection dialog.
-        
+
         Args:
             master: Parent window
-            device: SerialDevice instance
+            device: SerialDevice or MockSerialDevice instance
+            mock_port_name: Name of the mock port (from config)
+            is_mock_enabled: Flag indicating if mock mode is active (from config)
         """
         self.device = device
+        self.mock_port_name = mock_port_name
+        self.is_mock_enabled = is_mock_enabled
+        # Get initial list (will include mock port if mock device used)
         self.port_list = device.scan_ports()
         super().__init__(master, title="Set Connection")
     
@@ -876,14 +1016,24 @@ class ConnectionDialog(tk_sd.Dialog):
     
     def refresh_ports(self):
         """Refresh the list of available ports."""
+        # Get ports from the device (could be real or mock)
         self.port_list = self.device.scan_ports()
         self.port_menu['values'] = self.port_list
-        
+
         if self.port_list:
-            self.port_val.set(self.port_list[0])
+            # Prioritize setting mock port if enabled and present
+            initial_port = self.mock_port_name if self.is_mock_enabled and self.mock_port_name in self.port_list else self.port_list[0]
+            self.port_val.set(initial_port)
             self.status_var.set(f"Found {len(self.port_list)} ports")
         else:
             self.status_var.set("No ports found")
+            if self.is_mock_enabled:
+                # Ensure mock port is still shown even if scan fails somehow
+                print("Warning: Mock enabled, but refresh_ports found none? Adding mock port manually.")
+                self.port_list = [self.mock_port_name]
+                self.port_menu['values'] = self.port_list
+                self.port_val.set(self.mock_port_name)
+                self.status_var.set(f"Found 1 port (Mock)")
     
     def connect(self):
         """Attempt to connect to the selected port."""
@@ -1059,17 +1209,42 @@ class AquaphotomicsApp(tk.Tk):
         """Initialize the application."""
         super().__init__()
         
+        # Load configuration using ConfigManager
+        self.app_config = ConfigManager()
+        
         # Basic window setup
         self.title(VERSION_STRING)
         self.resizable(0, 0)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # Initialize state
+        # Initialize state (using values from ConfigManager)
         self.icons = {}
         self.user = None
         self.data_processor = MeasurementData()
         self.sample_list = DEFAULT_SAMPLE_TYPES.copy()
-        
+        # No longer need separate config-related attributes here
+        # self.use_mock_device = False
+        # self.mock_port_name = "MOCK_COM"
+        # self.output_directory = "output_data" # Default output directory
+        # self.handshake_timeout = 0.5 # Default handshake timeout
+
+        # Read configuration - Now handled by ConfigManager initialization
+        # try:
+            # ... removed config reading block ...
+        # except Exception as e:
+            # print(f"Error reading config.ini: {e}. Using default settings.")
+
+        # Ensure output directory exists *before* creating user/files
+        try:
+            print(f"Ensuring output directory exists: {self.app_config.App.output_directory}")
+            os.makedirs(self.app_config.App.output_directory, exist_ok=True)
+        except Exception as e:
+            # Handle potential errors creating directory (e.g., permissions)
+            print(f"ERROR: Could not create output directory '{self.app_config.App.output_directory}': {e}")
+            # Decide how to proceed - maybe default to current dir or raise error?
+            # For now, print error and continue, data_processor might fail later.
+            pass
+
         # Create frames
         self.bframe = tk.Frame(self)  # Top control frame
         self.bframe.grid(row=0, column=0, sticky='ew')
@@ -1083,9 +1258,16 @@ class AquaphotomicsApp(tk.Tk):
         # Load icons
         self.load_icons()
         
-        # Initialize device communication
-        self.device = SerialDevice()
-        
+        # Initialize device communication (conditionally using ConfigManager)
+        if self.app_config.App.use_mock_device:
+            print("--- Using Mock Serial Device --- ")
+            self.device = MockSerialDevice(self.app_config.MockDevice.mock_port_name)
+        else:
+            print("--- Using Real Serial Device --- ")
+            self.device = SerialDevice()
+            # Pass handshake timeout to SerialDevice if needed for later use?
+            # Or maybe SerialDevice reads it itself? For now, pass to relevant methods.
+
         # Create visualization
         self.figures = AquaphotomicsFigures("Aquaphotomics Figures")
         
@@ -1095,6 +1277,10 @@ class AquaphotomicsApp(tk.Tk):
         self.setup_top_controls()
         self.setup_table()
         self.setup_bottom_controls()
+
+        # Automatically create a default user on startup
+        print("Attempting to set up default user on startup...")
+        self.new_user()
     
     def on_closing(self):
         """Handle application closing."""
@@ -1120,10 +1306,19 @@ class AquaphotomicsApp(tk.Tk):
         """Initialize UI state variables."""
         # Connection variables
         self.com_var = tk.StringVar()
+        # Get ports from the device (could be real or mock)
         com_ports = self.device.scan_ports()
         if com_ports:
-            self.com_var.set(com_ports[0])
-        
+            # Set initial value (prioritize mock port if it exists)
+            initial_port = self.app_config.MockDevice.mock_port_name if self.app_config.App.use_mock_device and self.app_config.MockDevice.mock_port_name in com_ports else com_ports[0]
+            self.com_var.set(initial_port)
+        else:
+            if self.app_config.App.use_mock_device:
+                 # Should not happen if MockDevice.scan_ports includes the mock name
+                 print("Warning: Mock device enabled but scan_ports returned empty? Setting mock port anyway.")
+                 self.com_var.set(self.app_config.MockDevice.mock_port_name)
+            # else: leave empty if no real ports found
+
         # Channel control variables
         self.channel_all_status = tk.BooleanVar(value=False)
         
@@ -1216,7 +1411,8 @@ class AquaphotomicsApp(tk.Tk):
         # COM port selection
         try:
             com_menu = ttk.Combobox(self.bframe, textvariable=self.com_var, width=20)
-            com_menu['values'] = self.device.scan_ports()
+            # Ensure the list shown includes the mock port if applicable
+            com_menu['values'] = self.device.scan_ports() # Mock/Real scan_ports handles adding mock name
             com_menu.grid(row=0, column=0, sticky="ew")
         except Exception as e:
             print(f"Error setting up COM port menu: {str(e)}")
@@ -1570,12 +1766,20 @@ class AquaphotomicsApp(tk.Tk):
     
     def connect_device(self):
         """Open the connection dialog to connect to a device."""
-        dialog = ConnectionDialog(self, self.device)
+        # Pass mock info to the dialog using ConfigManager values
+        dialog = ConnectionDialog(
+            self, 
+            self.device, 
+            self.app_config.MockDevice.mock_port_name, 
+            self.app_config.App.use_mock_device
+        )
         if dialog.result:
+            # Indicate connection status (could be real or mock)
+            print(f"Connection established via dialog (Port: {dialog.result})")
             device_icon = self.icons.get('002.png')
             if device_icon:
                 self.menubar.entryconfig(
-                    self.menubar.index("Device"), 
+                    self.menubar.index("Device"),
                     image=device_icon
                 )
     
@@ -1649,41 +1853,99 @@ class AquaphotomicsApp(tk.Tk):
     
     def read_table(self):
         """Read configuration data for all channels."""
-        for i in range(16):
-            self.read_channel_data(i)
-            self.update()
-    
+        # %%GUI_REF%% SRC=read_table TGT=device.is_connected ACTION=Read DESC=Check connection before proceeding
+        if not self.device.is_connected():
+            # %%GUI_REF%% SRC=read_table TGT=tk_msg.showerror ACTION=Display DESC=Show error once if not connected
+            tk_msg.showerror("Error", "Device not connected", parent=self)
+            return # Exit if not connected
+
+        # %%GUI_REF%% SRC=read_table TGT=print ACTION=Log DESC=Log start of table read
+        print("Reading configuration table from device...")
+        try:
+            for i in range(16):
+                # %%GUI_REF%% SRC=read_table TGT=read_channel_data ACTION=Call DESC=Read data for one channel
+                self.read_channel_data(i)
+                # %%GUI_REF%% SRC=read_table TGT=tk.update ACTION=Trigger DESC=Refresh UI after reading channel
+                self.update()
+            # %%GUI_REF%% SRC=read_table TGT=print ACTION=Log DESC=Log successful table read
+            print("Table read complete.")
+        except Exception as e:
+            # %%GUI_REF%% SRC=read_table TGT=tk_msg.showerror ACTION=Display DESC=Show error during table read
+            tk_msg.showerror("Error", f"Failed during table read: {str(e)}", parent=self)
+            # %%GUI_REF%% SRC=read_table TGT=print ACTION=Log SEVERITY=Error DESC=Log error during table read
+            print(f"ERROR during table read: {str(e)}")
+
     def write_table(self):
         """Write configuration data for all channels after confirmation."""
+        # %%GUI_REF%% SRC=write_table TGT=device.is_connected ACTION=Read DESC=Check connection before proceeding
+        if not self.device.is_connected():
+             # %%GUI_REF%% SRC=write_table TGT=tk_msg.showerror ACTION=Display DESC=Show error once if not connected
+            tk_msg.showerror("Error", "Device not connected", parent=self)
+            return # Exit if not connected
+
+        # %%GUI_REF%% SRC=write_table TGT=tk_msg.askquestion ACTION=Display DESC=Confirm overwriting EEPROM
         result = tk_msg.askquestion(
-            "Warning", 
-            "Do you really want to overwrite EEPROM table?", 
-            icon='warning', 
+            "Warning",
+            "Do you really want to overwrite EEPROM table?",
+            icon='warning',
             parent=self
         )
-        
+
         if result == 'yes':
-            for i in range(16):
-                self.write_channel_data(i)
-                self.update()
+            # %%GUI_REF%% SRC=write_table TGT=print ACTION=Log DESC=Log start of table write
+            print("Writing configuration table to device...")
+            try:
+                for i in range(16):
+                    # %%GUI_REF%% SRC=write_table TGT=write_channel_data ACTION=Call DESC=Write data for one channel
+                    self.write_channel_data(i)
+                    # %%GUI_REF%% SRC=write_table TGT=tk.update ACTION=Trigger DESC=Refresh UI after writing channel
+                    self.update()
+                # %%GUI_REF%% SRC=write_table TGT=print ACTION=Log DESC=Log successful table write
+                print("Table write complete.")
+            except Exception as e:
+                # %%GUI_REF%% SRC=write_table TGT=tk_msg.showerror ACTION=Display DESC=Show error during table write
+                tk_msg.showerror("Error", f"Failed during table write: {str(e)}", parent=self)
+                # %%GUI_REF%% SRC=write_table TGT=print ACTION=Log SEVERITY=Error DESC=Log error during table write
+                print(f"ERROR during table write: {str(e)}")
 
     #--------------------------------------------------------------------------
     # User and configuration methods
     #--------------------------------------------------------------------------
     def new_user(self):
-        """Create a new user profile."""
-        dialog = UserDialog(self)
-        if dialog.result is not None:
-            self.user = {'name': dialog.result[0], 'file': dialog.result[1]}
+        """Create/set a user profile automatically with a timestamp, saving to configured dir."""
+        # Generate automatic user name and file path
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        user_name = f"TestUser_{timestamp}"
+        # Use configured output directory (already ensured to exist by __init__)
+        file_path = os.path.join(self.app_config.App.output_directory, f"{user_name}_data.csv")
+
+        print(f"Setting up automatic user: {user_name}, File: {file_path}")
+
+        # Set user and data file directly
+        self.user = {'name': user_name, 'file': file_path}
+        try:
+            # %%GUI_REF%% SRC=new_user TGT=data_processor.set_data_file ACTION=Call DESC=Set the data file path and write headers
             self.data_processor.set_data_file(self.user['file'])
-            
+
             # Update the menu icon to show user is active
+            # %%GUI_REF%% SRC=new_user TGT=menubar ACTION=Configure DESC=Update user menu icon to active state
             user_icon = self.icons.get('user.png')
             if user_icon:
                 self.menubar.entryconfig(
-                    self.menubar.index("User"), 
+                    self.menubar.index("User"),
                     image=user_icon
                 )
+            # %%GUI_REF%% SRC=new_user TGT=print ACTION=Log DESC=Log successful user creation
+            print(f"User '{user_name}' set successfully.")
+        except Exception as e:
+            # %%GUI_REF%% SRC=new_user TGT=tk_msg.showerror ACTION=Display DESC=Show error if setting data file fails
+            tk_msg.showerror("Error", f"Failed to set up data file {file_path}: {str(e)}", parent=self)
+            # %%GUI_REF%% SRC=new_user TGT=print ACTION=Log SEVERITY=Error DESC=Log error during automatic user creation
+            print(f"Error setting up data file for automatic user: {str(e)}")
+            self.user = None # Reset user if setup failed
+
+        # Optional: Update title or a status bar to show the current user/file
+        # self.title(f"{VERSION_STRING} - User: {user_name}")
     
     def select_data_file(self):
         """Select a data file for measurements."""
@@ -1762,7 +2024,7 @@ class AquaphotomicsApp(tk.Tk):
     #--------------------------------------------------------------------------
     # Measurement methods
     #--------------------------------------------------------------------------
-    def calibration(self):
+    def _original_calibration(self): # Renamed from calibration
         """
         Perform calibration. This adjusts channel DAC values to achieve a target ADC reading.
         """
@@ -1972,7 +2234,7 @@ class AquaphotomicsApp(tk.Tk):
             # Re-enable calibration button
             self.button_calibration.config(state="normal")
     
-    def measurement(self):
+    def _original_measurement(self): # Renamed from measurement
         """
         Perform a measurement on enabled channels.
         """
@@ -2080,7 +2342,7 @@ class AquaphotomicsApp(tk.Tk):
             # Re-enable measurement button
             self.button_measurement.config(state="normal")
     
-    def measurement_multiple(self):
+    def _original_measurement_multiple(self): # Renamed from measurement_multiple
         """
         Perform multiple measurements in sequence.
         """
@@ -2180,6 +2442,864 @@ class AquaphotomicsApp(tk.Tk):
         """Handle the update of the application."""
         # Implementation of update method
         pass 
+
+    def _prepare_calibration_data(self):
+        """
+        Performs initial checks and gathers necessary data for calibration.
+
+        Returns:
+            A dictionary containing setup data if checks pass, otherwise None.
+            Keys: 'reference_value', 'selected_channels', 'user_name', 'cal_total', 'is_level_cal'
+        """
+        # Check if data file is selected
+        if not self.data_processor.data_file_path:
+            tk_msg.showinfo("Select File", "Select File for Measurement First!", parent=self)
+            return None
+
+        # Check if user is defined
+        if self.user is None:
+            tk_msg.showinfo("User", "Define a user for Measurement First!", parent=self)
+            return None
+
+        # Check device connection (optional here, could be checked later, but good practice)
+        # Assuming device connection is required before calibration can be initiated
+        if not self.device.connect_status:
+             tk_msg.showerror("Error", "Device not connected", parent=self)
+             return None
+
+        # Get sorted list of enabled channels
+        enabled_channels = {}
+        for i in range(16):
+            if self.channel_status[i].get():
+                try:
+                    # Ensure order is a valid integer
+                    order = int(self.channel_order[i].get())
+                    enabled_channels[i] = order
+                except ValueError:
+                     tk_msg.showerror("Error", f"Invalid order value for channel {i}. Please enter a number.", parent=self)
+                     return None
+
+        if not enabled_channels:
+            tk_msg.showinfo("Channels", "No channels selected for calibration.", parent=self)
+            return None
+
+        selected_channels = sorted(enabled_channels, key=enabled_channels.get)
+
+        # Determine calibration type and get reference value
+        cal_ref_str = self.cal_ref.get()
+        reference_value = None
+        is_level_cal = False # Flag to indicate if it's just a level check
+
+        if not cal_ref_str:
+            # No calibration value - use current levels
+            msg = "No calibration value!\nDo you want to continue with\ncurrent level calibration?"
+            result = tk_msg.askquestion("Warning", msg, icon='warning', parent=self)
+            if result == 'no':
+                return None
+            is_level_cal = True
+        else:
+            try:
+                reference_value = int(cal_ref_str)
+                if reference_value <= 0: # Basic validation
+                     tk_msg.showerror("Error", "Calibration Reference must be a positive integer.", parent=self)
+                     return None
+            except ValueError:
+                 tk_msg.showerror("Error", "Invalid Calibration Reference value. Please enter a number.", parent=self)
+                 return None
+
+        setup_data = {
+            'reference_value': reference_value, # Will be None for level calibration
+            'selected_channels': selected_channels,
+            'user_name': self.user['name'],
+            'cal_total': self.data_processor.cal_total,
+            'is_level_cal': is_level_cal
+        }
+        return setup_data
+    
+    def _run_calibration_for_channel(self, channel: int, target_adc: int) -> int:
+        """
+        Performs the calibration routine for a single channel to match a target ADC value.
+
+        Args:
+            channel: The index of the channel to calibrate (0-15).
+            target_adc: The target ADC value to achieve.
+
+        Returns:
+            The final measured ADC pulse value after calibration.
+
+        Raises:
+            DataProcessingError: If the calibration fails (e.g., cycle limit exceeded).
+            Exception: If device communication fails.
+        """
+        # Calibration constants (could be moved to class level later)
+        DELTA_ADC = 4
+        DELTA_DAC = 0  # Minimum change in DAC to continue search
+        DAC_MIN = 20
+        DAC_MAX = 3520
+        MAX_CALIBRATION_CYCLES = 50
+
+        n_calibration_cycles = 0
+        dac_min = DAC_MIN
+        dac_max = DAC_MAX
+
+        # Get current values (initial state)
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_dac[channel] ACTION=Read DESC=Get initial DAC value for channel
+        dac_current = int(self.channel_dac[channel].get())
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.measure_channel ACTION=Trigger DESC=Measure initial ADC values for channel
+        adc_pulse, adc2_pulse, adc_background = self.device.measure_channel(channel)
+
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc[channel] ACTION=Update DESC=Display initial ADC1 value
+        self.channel_adc[channel].set(adc_pulse)
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc2[channel] ACTION=Update DESC=Display initial ADC2 value
+        self.channel_adc2[channel].set(adc2_pulse)
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc_bg[channel] ACTION=Update DESC=Display initial ADC background value
+        self.channel_adc_bg[channel].set(adc_background)
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=tk.update ACTION=Trigger DESC=Refresh UI to show initial values
+        self.update() # Show initial state
+
+        adc_current = adc_pulse
+        dac_old = dac_current
+
+        # Binary search for target ADC value
+        while abs(target_adc - adc_current) > DELTA_ADC and n_calibration_cycles < MAX_CALIBRATION_CYCLES:
+            if adc_current < target_adc:
+                dac_min = dac_current
+            else:
+                dac_max = dac_current
+
+            dac_current = int((dac_min + dac_max) / 2)
+
+            # Prevent infinite loop if DAC isn't changing enough
+            if abs(dac_old - dac_current) <= DELTA_DAC:
+                print(f"Channel {channel}: DAC change too small ({abs(dac_old - dac_current)}), stopping binary search.")
+                break
+
+            dac_old = dac_current
+
+            # Set new DAC value
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_dac[channel] ACTION=Update DESC=Set new DAC value during binary search
+            self.channel_dac[channel].set(dac_current)
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.write_signal_to_channel ACTION=Trigger DESC=Write new DAC value to device
+            self.device.write_signal_to_channel(channel, 0, dac_current) # Signal type 0 is DAC
+
+            # Measure new ADC value
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.measure_channel ACTION=Trigger DESC=Measure ADC values after DAC change
+            adc_pulse, adc2_pulse, adc_background = self.device.measure_channel(channel)
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc[channel] ACTION=Update DESC=Display new ADC1 value
+            self.channel_adc[channel].set(adc_pulse)
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc2[channel] ACTION=Update DESC=Display new ADC2 value
+            self.channel_adc2[channel].set(adc2_pulse)
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc_bg[channel] ACTION=Update DESC=Display new ADC background value
+            self.channel_adc_bg[channel].set(adc_background)
+
+            adc_current = adc_pulse
+            n_calibration_cycles += 1
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=tk.update ACTION=Trigger DESC=Refresh UI during binary search
+            self.update()
+
+        # Fine-tuning if we're not exactly at the target value after binary search
+        if abs(target_adc - adc_current) > 0 and n_calibration_cycles < MAX_CALIBRATION_CYCLES:
+             # Define a small range around the current DAC for linear search
+             fine_tune_range = 5
+             dac_search_min = max(DAC_MIN, dac_current - fine_tune_range)
+             dac_search_max = min(DAC_MAX, dac_current + fine_tune_range)
+             
+             # Store the best DAC found so far and its ADC value
+             best_dac = dac_current
+             best_adc_diff = abs(adc_current - target_adc)
+
+             # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=print ACTION=Log DESC=Log start of fine-tuning search
+             print(f"Channel {channel}: Fine-tuning DAC around {dac_current} (Range: {dac_search_min}-{dac_search_max})")
+
+             # Linear search in the narrow range
+             for dac_fine_tune in range(dac_search_min, dac_search_max + 1):
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.write_signal_to_channel ACTION=Trigger DESC=Write DAC value during fine-tuning
+                 self.device.write_signal_to_channel(channel, 0, dac_fine_tune)
+
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.measure_channel ACTION=Trigger DESC=Measure ADC values during fine-tuning
+                 adc_pulse, adc2_pulse, adc_background = self.device.measure_channel(channel)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc[channel] ACTION=Update DESC=Display ADC1 value during fine-tuning
+                 self.channel_adc[channel].set(adc_pulse)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc2[channel] ACTION=Update DESC=Display ADC2 value during fine-tuning
+                 self.channel_adc2[channel].set(adc2_pulse)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc_bg[channel] ACTION=Update DESC=Display ADC background value during fine-tuning
+                 self.channel_adc_bg[channel].set(adc_background)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=tk.update ACTION=Trigger DESC=Refresh UI during fine-tuning
+                 self.update()
+
+                 adc_current_fine = adc_pulse
+                 current_diff = abs(adc_current_fine - target_adc)
+
+                 # Update best DAC if this one is closer to the target
+                 if current_diff < best_adc_diff:
+                     best_adc_diff = current_diff
+                     best_dac = dac_fine_tune
+                     # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=print ACTION=Log DESC=Log new best DAC found during fine-tuning
+                     print(f"Channel {channel}: New best DAC {best_dac} with ADC {adc_current_fine} (Diff: {current_diff})")
+
+                 # Optimization: If we just crossed the target, the previous or current DAC is likely the best
+                 # This logic assumes a mostly monotonic DAC->ADC relationship in the small range
+                 if (adc_current_fine > target_adc and adc_current < target_adc) or \
+                    (adc_current_fine < target_adc and adc_current > target_adc):
+                     # We crossed the target. Compare the current and previous DAC.
+                     if current_diff < best_adc_diff: # current is better
+                         best_dac = dac_fine_tune
+                     # No need to necessarily break, let loop finish to ensure minimum diff found
+
+                 adc_current = adc_current_fine # Update adc_current for the next loop iteration comparison
+
+
+             # After checking the range, set the DAC to the best one found
+             if dac_current != best_dac:
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=print ACTION=Log DESC=Log setting final best DAC after fine-tuning
+                 print(f"Channel {channel}: Setting final DAC to best found: {best_dac}")
+                 dac_current = best_dac
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_dac[channel] ACTION=Update DESC=Set final best DAC value after fine-tuning
+                 self.channel_dac[channel].set(dac_current)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.write_signal_to_channel ACTION=Trigger DESC=Write final best DAC value to device
+                 self.device.write_signal_to_channel(channel, 0, dac_current)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=device.measure_channel ACTION=Trigger DESC=Measure final ADC values after setting best DAC
+                 adc_pulse, adc2_pulse, adc_background = self.device.measure_channel(channel)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc[channel] ACTION=Update DESC=Display final ADC1 value
+                 self.channel_adc[channel].set(adc_pulse)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc2[channel] ACTION=Update DESC=Display final ADC2 value
+                 self.channel_adc2[channel].set(adc2_pulse)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc_bg[channel] ACTION=Update DESC=Display final ADC background value
+                 self.channel_adc_bg[channel].set(adc_background)
+                 # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=tk.update ACTION=Trigger DESC=Refresh UI after setting final DAC
+                 self.update()
+
+
+        # Check if calibration was successful
+        if n_calibration_cycles >= MAX_CALIBRATION_CYCLES:
+            # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=tk_msg.showwarning ACTION=Display DESC=Warn user about calibration cycle limit reached
+            tk_msg.showwarning("Calibration Warning", f"Channel {channel}: Calibration cycles limit ({MAX_CALIBRATION_CYCLES}) exceeded. Result might be inaccurate.", parent=self)
+            # Decide if this should be a hard error or just a warning. Let's proceed but log.
+            # raise DataProcessingError(f'Channel {channel}: Calibration cycles limit exceeded')
+
+        # Return the final ADC pulse value achieved
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=channel_adc[channel] ACTION=Read DESC=Read final ADC value to return
+        final_adc_pulse = int(self.channel_adc[channel].get())
+        # %%GUI_REF%% SRC=_run_calibration_for_channel TGT=print ACTION=Log DESC=Log final calibration result for channel
+        print(f"Channel {channel}: Calibration finished. Final DAC: {dac_current}, Final ADC: {final_adc_pulse} (Target: {target_adc})")
+        return final_adc_pulse
+
+    def _perform_level_calibration(self, selected_channels: List[int]) -> List[int]:
+        """
+        Performs a 'level calibration' by measuring the current ADC values
+        for the selected channels without adjusting DAC settings.
+
+        Args:
+            selected_channels: A sorted list of channel indices to measure.
+
+        Returns:
+            A list of the measured ADC pulse values for the selected channels,
+            in the order they were provided.
+
+        Raises:
+            Exception: If device communication fails.
+        """
+        measured_adc_values = []
+
+        # %%GUI_REF%% SRC=_perform_level_calibration TGT=print ACTION=Log DESC=Log start of level calibration
+        print("Performing level calibration (measuring current ADC values)...")
+
+        for channel in selected_channels:
+            # %%GUI_REF%% SRC=_perform_level_calibration TGT=device.measure_channel ACTION=Trigger DESC=Measure current ADC values for channel
+            adc_pulse, adc2_pulse, adc_background = self.device.measure_channel(channel)
+
+            # Update UI
+            # %%GUI_REF%% SRC=_perform_level_calibration TGT=channel_adc[channel] ACTION=Update DESC=Display measured ADC1 value
+            self.channel_adc[channel].set(adc_pulse)
+            # %%GUI_REF%% SRC=_perform_level_calibration TGT=channel_adc2[channel] ACTION=Update DESC=Display measured ADC2 value
+            self.channel_adc2[channel].set(adc2_pulse)
+            # %%GUI_REF%% SRC=_perform_level_calibration TGT=channel_adc_bg[channel] ACTION=Update DESC=Display measured ADC background value
+            self.channel_adc_bg[channel].set(adc_background)
+
+            # Store the measured value
+            measured_adc_values.append(adc_pulse)
+
+            # %%GUI_REF%% SRC=_perform_level_calibration TGT=tk.update ACTION=Trigger DESC=Refresh UI after measuring channel
+            self.update() # Update UI after each channel measurement
+
+        # %%GUI_REF%% SRC=_perform_level_calibration TGT=print ACTION=Log DESC=Log end of level calibration
+        print(f"Level calibration complete. Measured ADC values: {measured_adc_values}")
+        return measured_adc_values
+
+    def _prepare_plot_and_record_data(self,
+                                     selected_channels: List[int],
+                                     final_adc_values: List[int],
+                                     final_adc2_values: List[int], # Added to match original data recording
+                                     final_adc_bg_values: List[int], # Added to match original data recording
+                                     measurement_label: str):
+        """
+        Prepares data for plotting, records data to files, and updates plots.
+        This is called after either target ADC or level calibration is complete for all channels.
+
+        Args:
+            selected_channels: List of channel indices that were processed.
+            final_adc_values: List of the final ADC1 pulse values for each selected channel.
+            final_adc2_values: List of the final ADC2 pulse values for each selected channel.
+            final_adc_bg_values: List of the final ADC background values for each selected channel.
+            measurement_label: The label to use for this dataset (e.g., 'REF_10000_0' or 'MEAS_00000_1').
+        """
+        # %%GUI_REF%% SRC=_prepare_plot_and_record_data TGT=print ACTION=Log DESC=Log start of data preparation and plotting
+        print(f"Preparing plot and recording data for: {measurement_label}")
+
+        theta_values = []
+        x_values = []
+        r_values = []
+
+        # Need the full 16-channel reference data from the data_processor
+        # Ensure ref_data has 16 elements, padding if necessary (though should be set by calibration)
+        current_ref_data = self.data_processor.ref_data
+        if len(current_ref_data) < 16:
+             # This case might indicate an issue, but we can pad with 1.0 as a fallback
+             print(f"Warning: Reference data length is {len(current_ref_data)}, expected 16. Padding with 1.0.")
+             current_ref_data.extend([1.0] * (16 - len(current_ref_data)))
+        elif len(current_ref_data) > 16:
+             print(f"Warning: Reference data length is {len(current_ref_data)}, expected 16. Truncating.")
+             current_ref_data = current_ref_data[:16]
+
+
+        # Prepare plot data using the final ADC values and the reference data
+        # We need to map selected_channels back to their final_adc_values index
+        for idx, channel in enumerate(selected_channels):
+            final_adc = final_adc_values[idx]
+            # Use the reference value corresponding to the absolute channel index (0-15)
+            reference = float(current_ref_data[channel]) if current_ref_data[channel] != 0 else 1.0 # Avoid division by zero
+
+            theta_values.append(THETA[channel])
+            x_values.append(WAVELENGTHS[channel])
+            # Calculate relative value for plotting
+            r_values.append(float(final_adc) / reference)
+
+        # Prepare the full data record for CSV logging (needs all 16 channels, even if not measured)
+        # Initialize with placeholders (e.g., 0 or None) for non-measured channels
+        full_measure_data = [self.user['name'], '', measurement_label] # Header part
+        # Create slots for 16 channels * 3 values each
+        channel_data_slots = [0] * (16 * 3)
+
+        # Fill in the slots for the channels that were actually measured
+        for idx, channel in enumerate(selected_channels):
+            # Calculate the starting index for this channel's data in the flat list
+            start_index = channel * 3
+            channel_data_slots[start_index]     = final_adc_values[idx]
+            channel_data_slots[start_index + 1] = final_adc2_values[idx] # Use collected ADC2
+            channel_data_slots[start_index + 2] = final_adc_bg_values[idx] # Use collected ADC background
+
+        full_measure_data.extend(channel_data_slots)
+
+
+        # Record data to files using the full_measure_data list
+        try:
+            # %%GUI_REF%% SRC=_prepare_plot_and_record_data TGT=data_processor.record_data ACTION=Trigger DESC=Record raw measurement data to CSV
+            self.data_processor.record_data(full_measure_data)
+            # %%GUI_REF%% SRC=_prepare_plot_and_record_data TGT=data_processor.record_amplitude ACTION=Trigger DESC=Calculate and record amplitude data to CSV
+            self.data_processor.record_amplitude(full_measure_data) # Uses the same full data structure
+        except DataProcessingError as e:
+             # %%GUI_REF%% SRC=_prepare_plot_and_record_data TGT=tk_msg.showerror ACTION=Display DESC=Show error if data recording fails
+             tk_msg.showerror("Recording Error", f"Failed to record data: {str(e)}", parent=self)
+             # Decide whether to continue with plotting or stop
+             return # Stop if recording failed
+
+
+        # Plot the data using the prepared plot arrays (theta, x, r)
+        # %%GUI_REF%% SRC=_prepare_plot_and_record_data TGT=figures.plot_data ACTION=Trigger DESC=Plot the processed data
+        self.figures.plot_data(theta_values, x_values, r_values, measurement_label)
+        # %%GUI_REF%% SRC=_prepare_plot_and_record_data TGT=print ACTION=Log DESC=Log completion of data preparation and plotting
+        print(f"Data recording and plotting complete for: {measurement_label}")
+
+    def calibration(self):
+        """
+        Perform calibration using helper methods for preparation, execution, and finalization.
+        Adjusts channel DAC values to achieve a target ADC reading, or performs level calibration.
+        """
+        # %%GUI_REF%% SRC=calibration TGT=_prepare_calibration_data ACTION=Call DESC=Perform initial checks and gather setup data
+        setup_data = self._prepare_calibration_data()
+        if setup_data is None:
+            return # Checks failed or user cancelled
+
+        # %%GUI_REF%% SRC=calibration TGT=button_calibration ACTION=Configure STATE=disabled DESC=Disable calibration button during operation
+        self.button_calibration.config(state="disabled")
+        # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log start of calibration process
+        print("Starting calibration process...")
+
+        try:
+            selected_channels = setup_data['selected_channels']
+            reference_value = setup_data['reference_value'] # Will be None for level calibration
+            is_level_cal = setup_data['is_level_cal']
+            cal_run_index = self.data_processor.cal_total # Get index before incrementing
+
+            final_adc1_values = [] # To store results from calibration/measurement steps
+            measurement_label = ""
+
+            if is_level_cal:
+                # Perform level calibration (measure current ADC levels)
+                # %%GUI_REF%% SRC=calibration TGT=_perform_level_calibration ACTION=Call DESC=Perform level calibration for selected channels
+                final_adc1_values = self._perform_level_calibration(selected_channels)
+                # The measured values become the new reference data
+                self.data_processor.ref_data = final_adc1_values[:] # Use a copy
+                measurement_label = f'REF_00000_{cal_run_index}'
+                # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log completion of level calibration part
+                print("Level calibration finished. Reference data updated.")
+
+            else:
+                # Perform calibration to target ADC value
+                measurement_label = f'REF_{reference_value}_{cal_run_index}'
+                temp_ref_data = []
+                # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log start of target ADC calibration part
+                print(f"Starting target ADC calibration for {len(selected_channels)} channels (Target: {reference_value})...")
+
+                for channel in selected_channels:
+                    # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log start of calibration for a specific channel
+                    print(f"Calibrating channel {channel}...")
+                    # %%GUI_REF%% SRC=calibration TGT=_run_calibration_for_channel ACTION=Call DESC=Run target ADC calibration for one channel
+                    final_adc = self._run_calibration_for_channel(channel, reference_value)
+                    final_adc1_values.append(final_adc)
+                    temp_ref_data.append(final_adc) # Collect the final ADC value as the reference
+                    # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log completion of calibration for a specific channel
+                    print(f"Calibration finished for channel {channel}. Final ADC: {final_adc}")
+
+                # Update the reference data with the results of the target calibration
+                self.data_processor.ref_data = temp_ref_data[:] # Use a copy
+                # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log completion of target ADC calibration part
+                print("Target ADC calibration finished for all selected channels. Reference data updated.")
+
+
+            # --- Finalization Step ---
+            # Increment total calibration count after successful run
+            self.data_processor.cal_total += 1
+
+            # Gather final ADC2 and Background values from UI state after calibration steps
+            # %%GUI_REF%% SRC=calibration TGT=channel_adc2 ACTION=Read DESC=Read final ADC2 values from UI for selected channels
+            final_adc2_values = [int(self.channel_adc2[ch].get()) for ch in selected_channels]
+            # %%GUI_REF%% SRC=calibration TGT=channel_adc_bg ACTION=Read DESC=Read final ADC background values from UI for selected channels
+            final_adc_bg_values = [int(self.channel_adc_bg[ch].get()) for ch in selected_channels]
+
+            # Prepare plot data, record to files, and plot
+            # %%GUI_REF%% SRC=calibration TGT=_prepare_plot_and_record_data ACTION=Call DESC=Prepare plot/record data and generate plots
+            self._prepare_plot_and_record_data(
+                selected_channels,
+                final_adc1_values,
+                final_adc2_values,
+                final_adc_bg_values,
+                measurement_label
+            )
+            # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log successful completion of entire calibration process
+            print("Calibration process completed successfully.")
+
+        except DataProcessingError as e:
+            # %%GUI_REF%% SRC=calibration TGT=tk_msg.showerror ACTION=Display DESC=Show specific data processing error message
+            tk_msg.showerror("Calibration Error", f"A data processing error occurred: {str(e)}", parent=self)
+            # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log SEVERITY=Error DESC=Log data processing error during calibration
+            print(f"ERROR during calibration (DataProcessingError): {str(e)}")
+        except Exception as e:
+            # %%GUI_REF%% SRC=calibration TGT=tk_msg.showerror ACTION=Display DESC=Show generic error message
+            tk_msg.showerror("Calibration Error", f"An unexpected error occurred: {str(e)}", parent=self)
+            # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log SEVERITY=Error DESC=Log unexpected error during calibration
+            print(f"ERROR during calibration (Exception): {str(e)}")
+            # Consider adding more detailed logging here if needed, e.g., traceback
+
+        finally:
+            # %%GUI_REF%% SRC=calibration TGT=button_calibration ACTION=Configure STATE=normal DESC=Re-enable calibration button
+            self.button_calibration.config(state="normal")
+            # %%GUI_REF%% SRC=calibration TGT=print ACTION=Log DESC=Log end of calibration attempt (success or failure)
+            print("Calibration function finished.")
+
+    def _prepare_measurement_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Performs initial checks and gathers necessary data for a measurement run.
+
+        Returns:
+            A dictionary containing setup data if checks pass, otherwise None.
+            Keys: 'selected_channels', 'user_name', 'sample_type', 'measurement_label_prefix'
+        """
+        # Check if data file is selected
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=data_processor.data_file_path ACTION=Read DESC=Check if data file path is set
+        if not self.data_processor.data_file_path:
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showinfo ACTION=Display DESC=Prompt user to select data file
+            tk_msg.showinfo("Select File", "Select File for Measurement First!", parent=self)
+            return None
+
+        # Check if user is defined
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=self.user ACTION=Read DESC=Check if user profile is set
+        if self.user is None:
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showinfo ACTION=Display DESC=Prompt user to define user
+            tk_msg.showinfo("User", "Define a user for Measurement First!", parent=self)
+            return None
+
+        # Check if sample is selected
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=sample_var ACTION=Read DESC=Check selected sample type
+        sample_type = self.sample_var.get()
+        if sample_type == 'Not set...':
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showinfo ACTION=Display DESC=Prompt user to select sample type
+            tk_msg.showinfo("Sample", "Define a sample for Measurement First!", parent=self)
+            return None
+
+        # Check device connection (essential for measurement)
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=device.connect_status ACTION=Read DESC=Check device connection status
+        if not self.device.connect_status:
+             # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showerror ACTION=Display DESC=Show device not connected error
+             tk_msg.showerror("Error", "Device not connected. Cannot perform measurement.", parent=self)
+             return None
+
+        # Get sorted list of enabled channels
+        enabled_channels = {}
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=channel_status,channel_order ACTION=Read DESC=Read status and order for all channels
+        for i in range(16):
+            if self.channel_status[i].get():
+                try:
+                    order = int(self.channel_order[i].get())
+                    enabled_channels[i] = order
+                except ValueError:
+                     # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showerror ACTION=Display DESC=Show error for invalid channel order
+                     tk_msg.showerror("Error", f"Invalid order value for channel {i}. Please enter a number.", parent=self)
+                     return None
+
+        if not enabled_channels:
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showinfo ACTION=Display DESC=Inform user no channels are selected
+            tk_msg.showinfo("Channels", "No channels selected for measurement.", parent=self)
+            return None
+
+        selected_channels = sorted(enabled_channels, key=enabled_channels.get)
+
+        # Handle calibration status and reference data
+        measurement_label_prefix = "MEAS_"
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=data_processor.cal_total ACTION=Read DESC=Check if any calibration has been run
+        if self.data_processor.cal_total == 0:
+            # No calibration performed, check if user provided a ref value
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=cal_ref ACTION=Read DESC=Read calibration reference input value
+            cal_ref_str = self.cal_ref.get()
+            if not cal_ref_str:
+                # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showerror ACTION=Display DESC=Error if no calibration and no ref value provided
+                tk_msg.showerror(
+                    "Calibration Needed",
+                    "Calibrate before Measuring, or set a Calibration Reference value\n"
+                    "in the top bar to measure using that fixed reference.",
+                    parent=self
+                )
+                # Raising an error might be better, but following original logic pattern
+                # raise DataProcessingError("...")
+                return None
+
+            # Prompt for confirmation to use the provided reference
+            msg = f"No calibration run yet. Measure using fixed reference: {cal_ref_str}?\n" \
+                  f"(Reference data from previous calibrations will be overwritten)"
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.askquestion ACTION=Display DESC=Confirm measurement using fixed reference
+            result = tk_msg.askquestion("Warning: Uncalibrated Measurement", msg, icon='warning', parent=self)
+
+            if result == 'no':
+                return None
+
+            # Set reference data based on user input
+            try:
+                ref_value = float(cal_ref_str)
+                 # %%GUI_REF%% SRC=_prepare_measurement_data TGT=data_processor.ref_data ACTION=Update DESC=Set fixed reference data for all channels
+                self.data_processor.ref_data = [ref_value] * 16
+                measurement_label_prefix += f"{cal_ref_str}_" # Add ref to label
+                # %%GUI_REF%% SRC=_prepare_measurement_data TGT=print ACTION=Log DESC=Log using fixed reference for measurement
+                print(f"Proceeding with measurement using fixed reference: {ref_value}")
+            except ValueError:
+                 # %%GUI_REF%% SRC=_prepare_measurement_data TGT=tk_msg.showerror ACTION=Display DESC=Show error for invalid fixed reference value
+                 tk_msg.showerror("Error", "Invalid Calibration Reference value. Please enter a number.", parent=self)
+                 return None
+        else:
+            # Calibration has been performed, use existing ref_data
+            measurement_label_prefix += "00000_" # Indicate use of calibrated reference
+            # %%GUI_REF%% SRC=_prepare_measurement_data TGT=print ACTION=Log DESC=Log using existing calibration data for measurement
+            print("Proceeding with measurement using existing calibration reference data.")
+
+
+        setup_data = {
+            'selected_channels': selected_channels,
+            'user_name': self.user['name'],
+            'sample_type': sample_type,
+            'measurement_label_prefix': measurement_label_prefix,
+             # Pass measurement count separately for label construction later
+            'meas_total': self.data_processor.meas_total
+        }
+        # %%GUI_REF%% SRC=_prepare_measurement_data TGT=print ACTION=Log DESC=Log successful completion of measurement preparation
+        print(f"Measurement preparation complete. Channels: {len(selected_channels)}")
+        return setup_data
+
+    def _perform_measurement_for_channels(self, selected_channels: List[int]) -> Dict[str, List[Any]]:
+        """
+        Performs the actual measurement for a list of selected channels.
+
+        Args:
+            selected_channels: A sorted list of channel indices to measure.
+
+        Returns:
+            A dictionary containing the results:
+            'adc1_values': List of measured ADC1 pulse values for selected channels.
+            'adc2_values': List of measured ADC2 pulse values for selected channels.
+            'adc_bg_values': List of measured ADC background values for selected channels.
+            'theta_values': List of theta values for plotting.
+            'x_values': List of wavelength values for plotting.
+            'r_values': List of calculated relative intensity values for plotting.
+        """
+        adc1_results = []
+        adc2_results = []
+        adc_bg_results = []
+        theta_values = []
+        x_values = []
+        r_values = []
+
+        # Ensure reference data is available (should be guaranteed by _prepare_measurement_data)
+        current_ref_data = self.data_processor.ref_data
+        if len(current_ref_data) != 16:
+             # This indicates a logical error if _prepare_measurement_data didn't set it correctly
+             # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=tk_msg.showerror ACTION=Display DESC=Show error if reference data is missing/invalid
+             tk_msg.showerror("Internal Error", "Reference data not properly initialized before measurement loop.", parent=self)
+             raise DataProcessingError("Reference data missing or invalid during measurement loop.")
+
+
+        # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=print ACTION=Log DESC=Log start of channel measurement loop
+        print(f"Starting measurement loop for {len(selected_channels)} channels...")
+        for channel in selected_channels:
+            # Get ADC values
+            # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=device.measure_channel ACTION=Trigger DESC=Measure ADC values for current channel
+            adc_pulse, adc2_pulse, adc_background = self.device.measure_channel(channel)
+
+            # Update UI display
+            # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=channel_adc[channel] ACTION=Update DESC=Display measured ADC1 value
+            self.channel_adc[channel].set(adc_pulse)
+            # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=channel_adc2[channel] ACTION=Update DESC=Display measured ADC2 value
+            self.channel_adc2[channel].set(adc2_pulse)
+            # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=channel_adc_bg[channel] ACTION=Update DESC=Display measured ADC background value
+            self.channel_adc_bg[channel].set(adc_background)
+
+            # Store results
+            adc1_results.append(adc_pulse)
+            adc2_results.append(adc2_pulse)
+            adc_bg_results.append(adc_background)
+
+            # Prepare plot data
+            reference = float(current_ref_data[channel]) if current_ref_data[channel] != 0 else 1.0 # Avoid division by zero
+            theta_values.append(THETA[channel])
+            x_values.append(WAVELENGTHS[channel])
+            r_values.append(float(adc_pulse) / reference)
+
+            # Update UI - crucial for showing progress during potentially long measurements
+            # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=tk.update ACTION=Trigger DESC=Refresh UI during measurement loop
+            self.update()
+
+        # %%GUI_REF%% SRC=_perform_measurement_for_channels TGT=print ACTION=Log DESC=Log completion of channel measurement loop
+        print("Measurement loop finished.")
+        return {
+            'adc1_values': adc1_results,
+            'adc2_values': adc2_results,
+            'adc_bg_values': adc_bg_results,
+            'theta_values': theta_values,
+            'x_values': x_values,
+            'r_values': r_values
+        }
+
+    def measurement(self):
+        """
+        Perform a measurement using helper methods for preparation, execution, and finalization.
+        """
+        # %%GUI_REF%% SRC=measurement TGT=_prepare_measurement_data ACTION=Call DESC=Perform initial checks and gather setup data
+        setup_data = self._prepare_measurement_data()
+        if setup_data is None:
+            return # Checks failed, user cancelled, or device not connected
+
+        # %%GUI_REF%% SRC=measurement TGT=button_measurement ACTION=Configure STATE=disabled DESC=Disable measurement button during operation
+        self.button_measurement.config(state="disabled")
+        # %%GUI_REF%% SRC=measurement TGT=print ACTION=Log DESC=Log start of measurement process
+        print("Starting measurement process...")
+
+        try:
+            selected_channels = setup_data['selected_channels']
+            measurement_label_prefix = setup_data['measurement_label_prefix']
+            meas_run_index = self.data_processor.meas_total # Get index before incrementing
+
+            # Perform the actual measurements for the selected channels
+            # %%GUI_REF%% SRC=measurement TGT=_perform_measurement_for_channels ACTION=Call DESC=Perform measurement loop for selected channels
+            measurement_results = self._perform_measurement_for_channels(selected_channels)
+
+            # Construct the final measurement label
+            measurement_label = f"{measurement_label_prefix}{meas_run_index}"
+
+            # --- Finalization Step ---
+            # Increment total measurement count after successful run
+            self.data_processor.meas_total += 1
+
+            # Prepare plot data, record to files, and plot using the REUSED helper
+            # %%GUI_REF%% SRC=measurement TGT=_prepare_plot_and_record_data ACTION=Call DESC=Prepare plot/record data and generate plots using collected results
+            self._prepare_plot_and_record_data(
+                selected_channels,
+                measurement_results['adc1_values'],
+                measurement_results['adc2_values'],
+                measurement_results['adc_bg_values'],
+                measurement_label # Pass the constructed label
+            )
+            # %%GUI_REF%% SRC=measurement TGT=print ACTION=Log DESC=Log successful completion of measurement process
+            print("Measurement process completed successfully.")
+
+        except DataProcessingError as e:
+            # %%GUI_REF%% SRC=measurement TGT=tk_msg.showerror ACTION=Display DESC=Show specific data processing error message
+            tk_msg.showerror("Measurement Error", f"A data processing error occurred: {str(e)}", parent=self)
+            # %%GUI_REF%% SRC=measurement TGT=print ACTION=Log SEVERITY=Error DESC=Log data processing error during measurement
+            print(f"ERROR during measurement (DataProcessingError): {str(e)}")
+        except Exception as e:
+            # %%GUI_REF%% SRC=measurement TGT=tk_msg.showerror ACTION=Display DESC=Show generic error message
+            tk_msg.showerror("Measurement Error", f"An unexpected error occurred: {str(e)}", parent=self)
+            # %%GUI_REF%% SRC=measurement TGT=print ACTION=Log SEVERITY=Error DESC=Log unexpected error during measurement
+            print(f"ERROR during measurement (Exception): {str(e)}")
+
+        finally:
+            # %%GUI_REF%% SRC=measurement TGT=button_measurement ACTION=Configure STATE=normal DESC=Re-enable measurement button
+            self.button_measurement.config(state="normal")
+            # %%GUI_REF%% SRC=measurement TGT=print ACTION=Log DESC=Log end of measurement attempt (success or failure)
+            print("Measurement function finished.")
+
+    def _prepare_multiple_measurement_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Performs initial checks and gathers necessary data for a multiple measurement run.
+
+        Returns:
+            A dictionary containing setup data if checks pass, otherwise None.
+            Keys: 'selected_channels', 'user_name', 'n_iterations'
+        """
+        # Check if data file is selected
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=data_processor.data_file_path ACTION=Read DESC=Check if data file path is set
+        if not self.data_processor.data_file_path:
+            # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.showinfo ACTION=Display DESC=Prompt user to select data file
+            tk_msg.showinfo("Select File", "Select File for Measurement First!", parent=self)
+            return None
+
+        # Check if user is defined
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=self.user ACTION=Read DESC=Check if user profile is set
+        if self.user is None:
+            # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.showinfo ACTION=Display DESC=Prompt user to define user
+            tk_msg.showinfo("User", "Define a user for Measurement First!", parent=self)
+            return None
+
+        # Check device connection
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=device.connect_status ACTION=Read DESC=Check device connection status
+        if not self.device.connect_status:
+             # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.showerror ACTION=Display DESC=Show device not connected error
+             tk_msg.showerror("Error", "Device not connected. Cannot perform measurement.", parent=self)
+             return None
+
+        # MUST have calibration performed before multiple measurement
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=data_processor.cal_total ACTION=Read DESC=Check if calibration has been run
+        if self.data_processor.cal_total == 0:
+             # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.showerror ACTION=Display DESC=Error if trying multiple measurement before calibration
+             tk_msg.showerror("Calibration Required", "Run Calibration at least once before using Measure N.", parent=self)
+             # Original code raised DataProcessingError here, which is good practice
+             # raise DataProcessingError("Calibrate before Measuring!")
+             return None
+
+        # Hardcode n_iterations for now, as discussed
+        n_iterations = 5
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=print ACTION=Log DESC=Log the number of iterations being used
+        print(f"Multiple Measurement: Using fixed {n_iterations} iterations.")
+
+        # Optional: Keep confirmation, or remove if fixed iterations don't need confirmation
+        msg = f"{n_iterations}-fold measurement run.\nDo you want to continue?"
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.askquestion ACTION=Display DESC=Confirm starting multiple measurement run
+        result = tk_msg.askquestion("Confirm Multiple Measurement", msg, icon='warning', parent=self)
+        if result == 'no':
+            return None
+
+        # Get sorted list of enabled channels (Duplicate code block - potential future refinement)
+        enabled_channels = {}
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=channel_status,channel_order ACTION=Read DESC=Read status and order for all channels
+        for i in range(16):
+            if self.channel_status[i].get():
+                try:
+                    order = int(self.channel_order[i].get())
+                    enabled_channels[i] = order
+                except ValueError:
+                     # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.showerror ACTION=Display DESC=Show error for invalid channel order
+                     tk_msg.showerror("Error", f"Invalid order value for channel {i}. Please enter a number.", parent=self)
+                     return None
+
+        if not enabled_channels:
+            # %%GUI_REF%% SRC=_prepare_multiple TGT=tk_msg.showinfo ACTION=Display DESC=Inform user no channels are selected
+            tk_msg.showinfo("Channels", "No channels selected for measurement.", parent=self)
+            return None
+
+        selected_channels = sorted(enabled_channels, key=enabled_channels.get)
+
+        setup_data = {
+            'selected_channels': selected_channels,
+            'user_name': self.user['name'], # Not strictly needed by the loop, but good context
+            'n_iterations': n_iterations
+        }
+        # %%GUI_REF%% SRC=_prepare_multiple TGT=print ACTION=Log DESC=Log successful preparation for multiple measurement
+        print(f"Multiple measurement preparation complete. Channels: {len(selected_channels)}, Iterations: {n_iterations}")
+        return setup_data
+
+    def measurement_multiple(self):
+        """
+        Perform multiple measurements in sequence using helper methods.
+        """
+        # %%GUI_REF%% SRC=measurement_multiple TGT=_prepare_multiple_measurement_data ACTION=Call DESC=Perform initial checks and gather setup data
+        setup_data = self._prepare_multiple_measurement_data()
+        if setup_data is None:
+            return # Checks failed or user cancelled
+
+        # %%GUI_REF%% SRC=measurement_multiple TGT=button_measurement_2 ACTION=Configure STATE=disabled DESC=Disable Measure N button during operation
+        self.button_measurement_2.config(state="disabled")
+        # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log DESC=Log start of multiple measurement process
+        print(f"Starting multiple measurement process ({setup_data['n_iterations']} iterations)...")
+
+        try:
+            selected_channels = setup_data['selected_channels']
+            n_iterations = setup_data['n_iterations']
+
+            # Outer loop for iterations
+            for i in range(n_iterations):
+                # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log DESC=Log start of measurement iteration
+                print(f"--- Measurement Iteration {i + 1} / {n_iterations} ---")
+                meas_run_index = self.data_processor.meas_total # Get index before incrementing
+
+                # Perform one full measurement cycle using the existing helper
+                # %%GUI_REF%% SRC=measurement_multiple TGT=_perform_measurement_for_channels ACTION=Call DESC=Perform measurement loop for selected channels in iteration
+                measurement_results = self._perform_measurement_for_channels(selected_channels)
+
+                # Construct the measurement label for this iteration
+                # Using 00000_ prefix because calibration is required beforehand
+                measurement_label = f"MEAS_00000_{meas_run_index}"
+
+                # Increment total measurement count AFTER measurement but BEFORE recording this iteration
+                self.data_processor.meas_total += 1
+
+                # Record and plot results for THIS iteration using the existing helper
+                # %%GUI_REF%% SRC=measurement_multiple TGT=_prepare_plot_and_record_data ACTION=Call DESC=Prepare plot/record data and generate plots for iteration results
+                self._prepare_plot_and_record_data(
+                    selected_channels,
+                    measurement_results['adc1_values'],
+                    measurement_results['adc2_values'],
+                    measurement_results['adc_bg_values'],
+                    measurement_label
+                )
+                # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log DESC=Log completion of measurement iteration
+                print(f"--- Measurement Iteration {i + 1} completed ---")
+
+            # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log DESC=Log successful completion of entire multiple measurement process
+            print("Multiple measurement process completed successfully.")
+
+        except DataProcessingError as e:
+             # %%GUI_REF%% SRC=measurement_multiple TGT=tk_msg.showerror ACTION=Display DESC=Show specific data processing error message
+            tk_msg.showerror("Multiple Measurement Error", f"A data processing error occurred: {str(e)}", parent=self)
+             # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log SEVERITY=Error DESC=Log data processing error during multiple measurement
+            print(f"ERROR during multiple measurement (DataProcessingError): {str(e)}")
+        except Exception as e:
+             # %%GUI_REF%% SRC=measurement_multiple TGT=tk_msg.showerror ACTION=Display DESC=Show generic error message
+            tk_msg.showerror("Multiple Measurement Error", f"An unexpected error occurred: {str(e)}", parent=self)
+             # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log SEVERITY=Error DESC=Log unexpected error during multiple measurement
+            print(f"ERROR during multiple measurement (Exception): {str(e)}")
+
+        finally:
+            # %%GUI_REF%% SRC=measurement_multiple TGT=button_measurement_2 ACTION=Configure STATE=normal DESC=Re-enable Measure N button
+            self.button_measurement_2.config(state="normal")
+            # %%GUI_REF%% SRC=measurement_multiple TGT=print ACTION=Log DESC=Log end of multiple measurement attempt (success or failure)
+            print("Multiple measurement function finished.")
 
 #------------------------------------------------------------------------------
 # MAIN EXECUTION

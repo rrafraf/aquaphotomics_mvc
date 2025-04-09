@@ -1,4 +1,9 @@
 ---
+description: 
+globs: 
+alwaysApply: false
+---
+---
 description: Aquaphotomics Application - Development Principles
 globs: 
 alwaysApply: false
