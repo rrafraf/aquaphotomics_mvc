@@ -40,7 +40,7 @@ matplotlib.use("TkAgg")
 matplotlib.rcParams["toolbar"] = "toolmanager"
 
 # Import the ConfigManager
-from config_manager import ConfigManager
+from config_manager import Config
 
 # Import the appropriate serial port detection based on the OS
 if os.name == "linux":
@@ -1210,7 +1210,7 @@ class AquaphotomicsApp(tk.Tk):
         super().__init__()
         
         # Load configuration using ConfigManager
-        self.app_config = ConfigManager()
+        self.app_config = Config()
         
         # Basic window setup
         self.title(VERSION_STRING)
@@ -1236,11 +1236,11 @@ class AquaphotomicsApp(tk.Tk):
 
         # Ensure output directory exists *before* creating user/files
         try:
-            print(f"Ensuring output directory exists: {self.app_config.App.output_directory}")
-            os.makedirs(self.app_config.App.output_directory, exist_ok=True)
+            print(f"Ensuring output directory exists: {self.app_config.output.directory}")
+            os.makedirs(self.app_config.output.directory, exist_ok=True)
         except Exception as e:
             # Handle potential errors creating directory (e.g., permissions)
-            print(f"ERROR: Could not create output directory '{self.app_config.App.output_directory}': {e}")
+            print(f"ERROR: Could not create output directory '{self.app_config.output.directory}': {e}")
             # Decide how to proceed - maybe default to current dir or raise error?
             # For now, print error and continue, data_processor might fail later.
             pass
@@ -1259,9 +1259,9 @@ class AquaphotomicsApp(tk.Tk):
         self.load_icons()
         
         # Initialize device communication (conditionally using ConfigManager)
-        if self.app_config.App.use_mock_device:
+        if self.app_config.serial.use_mock_device:
             print("--- Using Mock Serial Device --- ")
-            self.device = MockSerialDevice(self.app_config.MockDevice.mock_port_name)
+            self.device = MockSerialDevice(self.app_config.serial.mock_port_name)
         else:
             print("--- Using Real Serial Device --- ")
             self.device = SerialDevice()
@@ -1310,13 +1310,13 @@ class AquaphotomicsApp(tk.Tk):
         com_ports = self.device.scan_ports()
         if com_ports:
             # Set initial value (prioritize mock port if it exists)
-            initial_port = self.app_config.MockDevice.mock_port_name if self.app_config.App.use_mock_device and self.app_config.MockDevice.mock_port_name in com_ports else com_ports[0]
+            initial_port = self.app_config.serial.mock_port_name if self.app_config.serial.use_mock_device and self.app_config.serial.mock_port_name in com_ports else com_ports[0]
             self.com_var.set(initial_port)
         else:
-            if self.app_config.App.use_mock_device:
+            if self.app_config.serial.use_mock_device:
                  # Should not happen if MockDevice.scan_ports includes the mock name
                  print("Warning: Mock device enabled but scan_ports returned empty? Setting mock port anyway.")
-                 self.com_var.set(self.app_config.MockDevice.mock_port_name)
+                 self.com_var.set(self.app_config.serial.mock_port_name)
             # else: leave empty if no real ports found
 
         # Channel control variables
@@ -1765,13 +1765,12 @@ class AquaphotomicsApp(tk.Tk):
             return False
     
     def connect_device(self):
-        """Open the connection dialog to connect to a device."""
-        # Pass mock info to the dialog using ConfigManager values
+        """Open connection dialog to connect to a device."""
         dialog = ConnectionDialog(
-            self, 
-            self.device, 
-            self.app_config.MockDevice.mock_port_name, 
-            self.app_config.App.use_mock_device
+            self,
+            self.device,
+            self.app_config.serial.mock_port_name,
+            self.app_config.serial.use_mock_device
         )
         if dialog.result:
             # Indicate connection status (could be real or mock)
@@ -1917,7 +1916,7 @@ class AquaphotomicsApp(tk.Tk):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         user_name = f"TestUser_{timestamp}"
         # Use configured output directory (already ensured to exist by __init__)
-        file_path = os.path.join(self.app_config.App.output_directory, f"{user_name}_data.csv")
+        file_path = os.path.join(self.app_config.output.directory, f"{user_name}_data.csv")
 
         print(f"Setting up automatic user: {user_name}, File: {file_path}")
 

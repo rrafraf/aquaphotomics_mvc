@@ -116,81 +116,42 @@ Write-Log "" "White"
 # Target Python file
 $PYTHON_SCRIPT = "aquaphotomics_refactored.py"
 
-# Check if Python entry point exists
-$result = Invoke-CommandWithLogging "Test-Path $PYTHON_SCRIPT" "Checking for main application script" "Green"
-if (-not $result.Success -or $result.Output -ne "True") {
-    Write-Log "ERROR: Main application script not found" "Red"
-    Write-Log "Please make sure you're running this script from the correct folder." "Red"
-    exit 1
-}
+# Only check if venv folder exists
+$venvExists = Test-Path "venv"
 
-# Quick check if the environment is already set up correctly
-$quickStart = $true
-$requiredFiles = @(
-    "venv\Scripts\python.exe",
-    "venv\Scripts\activate.ps1"
-)
-
-foreach ($file in $requiredFiles) {
-    $result = Invoke-CommandWithLogging "Test-Path $file" "Checking for $file" "Green"
-    if (-not $result.Success -or $result.Output -ne "True") {
-        $quickStart = $false
-        Write-Log "Environment check: Missing $file - full setup will be required." "Yellow"
-        break
-    }
-}
-
-# Check if images directory exists
-$result = Invoke-CommandWithLogging "Test-Path images" "Checking for images directory" "Green"
-if (-not $result.Success -or $result.Output -ne "True") {
-    Write-Log "WARNING: The 'images' directory was not found." "Yellow"
-    Write-Log "The application may not display properly without the required images." "Yellow"
-    
-    $createDir = Read-Host "Do you want to create the images directory now? (y/n)"
-    if ($createDir -eq "y") {
-        $result = Invoke-CommandWithLogging "New-Item -ItemType Directory -Path images" "Creating images directory" "Green"
-        if ($result.Success) {
-            Write-Log "Created 'images' directory. Please add required image files to it." "Green"
-        } else {
-            Write-Log "Failed to create images directory" "Red" -CommandOutput $result.Output
-        }
-    }
-}
-
-# If we need to set up the environment
-if (-not $quickStart) {
-    Write-Log "Full environment setup required..." "Yellow"
+# If venv doesn't exist, create it using setup.ps1
+if (-not $venvExists) {
+    Write-Log "Python virtual environment not found - setting up environment..." "Yellow"
     try {
-        # Run the setup script to create/update the virtual environment
-        $result = Invoke-CommandWithLogging ".\setup.ps1" "Running setup script" "Green"
+        # Run setup.ps1 directly in the current process
+        Write-Log "Running setup script" "Green" ".\setup.ps1"
+        # Dot-source to run in current process
+        . .\setup.ps1
         
-        # If setup.ps1 failed or virtual environment doesn't exist after running it
-        if (-not $result.Success) {
-            throw "Setup script failed with exit code $($result.ExitCode)"
-        }
-        
-        $result = Invoke-CommandWithLogging "Test-Path venv\Scripts\python.exe" "Checking if virtual environment was created" "Green"
-        if (-not $result.Success -or $result.Output -ne "True") {
+        # Verify venv was created
+        if (-not (Test-Path "venv")) {
             throw "Setup script completed but virtual environment was not created properly"
         }
-    } 
+    }
     catch {
         $errorMessage = $_.Exception.Message
         Write-Log "ERROR: Failed to set up the Python environment" "Red"
         Write-Log "Error details: $errorMessage" "Red"
         Write-Log "Please ensure Python is installed and available in your PATH" "Red"
-        Write-Log "To force a complete rebuild, delete the venv folder and run this script again" "Yellow"
         exit 1
     }
-} 
-else {
-    Write-Log "Environment already set up - using quick start mode!" "Green"
 }
 
-# Activate the virtual environment (needed in either case)
-$result = Invoke-CommandWithLogging ".\venv\Scripts\activate.ps1" "Activating virtual environment" "Green"
-if (-not $result.Success) {
-    Write-Log "WARNING: Failed to activate virtual environment. Continuing anyway..." "Yellow"
+# Activate the virtual environment 
+Write-Log "Activating virtual environment" "Green" ".\venv\Scripts\activate.ps1"
+try {
+    # Dot-source the activation script to ensure it runs in the current scope
+    . .\venv\Scripts\activate.ps1
+    Write-Log "Virtual environment activated successfully" "Green"
+} catch {
+    $errorMessage = $_.Exception.Message
+    Write-Log "WARNING: Failed to activate virtual environment" "Yellow" -CommandOutput $errorMessage
+    Write-Log "Will attempt to continue with absolute path to Python executable" "Yellow"
 }
 
 # Show installed packages for debugging purposes only (if verbose mode is enabled)
@@ -225,8 +186,17 @@ try {
     # Create a more detailed log file for better error capture
     $errorLogFile = "python_error.log"
     
+    # Check if we have an activated Python environment
+    $pythonCommand = if (Test-Path Env:\VIRTUAL_ENV) { 
+        "python" # Use activated environment's python
+    } else {
+        "venv\Scripts\python.exe" # Fallback to direct path
+    }
+    
+    Write-Log "Using Python: $pythonCommand" "Green"
+    
     # Use Start-Process to get better error handling
-    $processInfo = Start-Process -FilePath "venv\Scripts\python.exe" -ArgumentList $PYTHON_SCRIPT -NoNewWindow -Wait -PassThru -RedirectStandardError $errorLogFile
+    $processInfo = Start-Process -FilePath $pythonCommand -ArgumentList $PYTHON_SCRIPT -NoNewWindow -Wait -PassThru -RedirectStandardError $errorLogFile
     $exitCode = $processInfo.ExitCode
     
     if ($exitCode -ne 0) {
@@ -239,14 +209,6 @@ try {
                 Write-Log "Python Error Output:" "Red" -CommandOutput $errorOutput
             }
         }
-        
-        # Provide troubleshooting information
-        Write-Log "`nTroubleshooting:" "Yellow"
-        Write-Log "1. Make sure all required dependencies are installed" "Yellow"
-        Write-Log "2. Check if the 'images' directory contains all necessary image files" "Yellow"
-        Write-Log "3. Verify that the serial port is available (if using hardware)" "Yellow"
-        Write-Log "4. Look for Python compatibility issues in the code" "Yellow"
-        Write-Log "5. To force a complete rebuild, delete the venv folder and run this script again" "Yellow"
         
         # Keep the window open if there was an error
         Write-Log "`nPress any key to exit..." "Red"
