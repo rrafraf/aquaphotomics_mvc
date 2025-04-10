@@ -59,8 +59,8 @@ function Invoke-CommandWithLogging {
     
     try {
         # Determine if this is a script file to execute or a regular command
-        if ($Command.StartsWith(".\") -and $Command.EndsWith(".ps1")) {
-            # This is a PowerShell script - execute it directly
+        if ($Command.StartsWith(".\") -and ($Command.EndsWith(".ps1") -or $Command.EndsWith(".py"))) { # Allow .py execution directly if needed elsewhere, but primary path is Start-Process
+            # This is a script file - execute it directly (less robust for Python than Start-Process)
             $output = & $Command 2>&1
             $exitCode = $LASTEXITCODE
         }
@@ -73,7 +73,7 @@ function Invoke-CommandWithLogging {
         elseif ($Command -match "^(pip|python)(\s|$)") {
             # Use cmd.exe for Python and pip commands to preserve output formatting
             $tempFile = [System.IO.Path]::GetTempFileName()
-            cmd /c "$Command > `"$tempFile`" 2>&1"
+            cmd /c "$Command > \"$tempFile\" 2>&1"
             $exitCode = $LASTEXITCODE
             $output = Get-Content -Path $tempFile -Raw
             Remove-Item -Path $tempFile -Force
@@ -113,8 +113,8 @@ Write-Log "  Aquaphotomics Application Launcher (Modular Edition)" "Cyan"
 Write-Log "=========================================================" "Cyan"
 Write-Log "" "White"
 
-# Target Python file
-$PYTHON_SCRIPT = "aquaphotomics_refactored.py"
+# Target Python file - Now using the run.py entry point
+$PYTHON_SCRIPT = "run.py"
 
 # Only check if venv folder exists
 $venvExists = Test-Path "venv"
@@ -162,13 +162,16 @@ if ($env:AQUA_DEBUG -eq "1") {
     Write-Log "--------------------------------------------------------" "Cyan"
 }
 
-# Check if we already have an encoding declaration (without logging the entire file content)
-# First just check the first line to avoid reading and logging the entire file
-$firstLine = Get-Content -Path $PYTHON_SCRIPT -TotalCount 1
-$needsEncoding = -not ($firstLine -match "coding[:=]\s*(utf-8|UTF-8)")
+# Check if the target script exists
+if (-not (Test-Path $PYTHON_SCRIPT)) {
+    Write-Log "Error: Target script '$PYTHON_SCRIPT' not found." "Red"
+    exit 1
+}
 
-if ($needsEncoding) {
-    Write-Log "Adding UTF-8 encoding declaration to the Python file..." "Yellow"
+# Optional: Check and add encoding declaration to run.py (less likely needed, but harmless)
+$firstLine = Get-Content -Path $PYTHON_SCRIPT -TotalCount 1
+if (-not ($firstLine -match "coding[:=]\s*(utf-8|UTF-8)")) {
+    Write-Log "Adding UTF-8 encoding declaration to the Python file ($PYTHON_SCRIPT)..." "Yellow"
     $fileContent = Get-Content -Path $PYTHON_SCRIPT -Raw
     $encodingDeclaration = "# -*- coding: utf-8 -*-`r`n"
     $newContent = $encodingDeclaration + $fileContent
@@ -176,8 +179,9 @@ if ($needsEncoding) {
     Write-Log "Encoding declaration added." "Green"
 }
 
+
 # Run the Python application
-Write-Log "`nLaunching Aquaphotomics application..." "Green"
+Write-Log "`nLaunching Aquaphotomics application via $PYTHON_SCRIPT ..." "Green"
 
 # Run Python with improved error handling
 try {
@@ -195,12 +199,12 @@ try {
     
     Write-Log "Using Python: $pythonCommand" "Green"
     
-    # Use Start-Process to get better error handling
+    # Use Start-Process to get better error handling and run the target script
     $processInfo = Start-Process -FilePath $pythonCommand -ArgumentList $PYTHON_SCRIPT -NoNewWindow -Wait -PassThru -RedirectStandardError $errorLogFile
     $exitCode = $processInfo.ExitCode
     
     if ($exitCode -ne 0) {
-        Write-Log "ERROR: Application exited with code $exitCode" "Red"
+        Write-Log "ERROR: Application ($PYTHON_SCRIPT) exited with code $exitCode" "Red"
         
         # Check if we have error logs to display
         if (Test-Path $errorLogFile) {
@@ -215,7 +219,7 @@ try {
         $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
     else {
-        Write-Log "Application exited successfully." "Green"
+        Write-Log "Application ($PYTHON_SCRIPT) exited successfully." "Green"
     }
     
     # Clean up error log
@@ -225,6 +229,6 @@ try {
 }
 catch {
     $errorMessage = $_.Exception.Message
-    Write-Log "ERROR: Failed to run the Python application." "Red"
+    Write-Log "ERROR: Failed to run the Python application ($PYTHON_SCRIPT)." "Red"
     Write-Log "Error details: $errorMessage" "Red"
-} 
+}
