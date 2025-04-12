@@ -1,15 +1,17 @@
-# -*- coding: utf-8 -*-
-# Simple entry point to run the application from the project root
+﻿# -*- coding: utf-8 -*-
 import sys
 import os
 
-# Add src directory to path to allow importing aquaphotomics package
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+from src.aquaphotomics.aquaphotomics_app_monolith import AquaphotomicsApp, VERSION_STRING
 
-# Import the run function from the main module within the package
-from aquaphotomics.main import run_app
+def run_app():
+    print(VERSION_STRING)
+    print(f"Working directory: {os.path.realpath(os.getcwd())}")
+
+    app = AquaphotomicsApp()
+    app.mainloop()
 
 if __name__ == '__main__':
-    # Execute the application
     run_app()
+
 
