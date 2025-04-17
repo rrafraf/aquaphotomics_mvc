@@ -32,6 +32,7 @@ from functools import partial
 import collections
 import mpmath as mp
 from typing import List, Dict, Any, Optional, Tuple, Union
+import traceback
 
 # Configure matplotlib
 warnings.simplefilter("ignore")
@@ -47,6 +48,10 @@ elif os.name == "nt":
     from serial.tools.list_ports_windows import *
 else:
     from serial.tools.list_ports_posix import *
+
+# Add imports for new digital twin and serial_comm
+from serial_comm.digital_twin import DigitalTwinSerialDevice
+from src.aquaphotomics.core.serial_device import SerialDeviceController
 
 #------------------------------------------------------------------------------
 # CONSTANTS AND CONFIGURATION
@@ -945,15 +950,7 @@ class AquaphotomicsApp(tk.Tk):
         self.load_icons()
         
         # Initialize device communication (conditionally using ConfigManager)
-        if self.app_config.serial.use_mock_device:
-            print("--- Using Mock Serial Device --- ")
-            # Pass mock port name from config
-            self.device = MockSerialDevice(self.app_config.serial.mock_port_name) 
-        else:
-            print("--- Using Real Serial Device --- ")
-            self.device = SerialDevice()
-            # Pass handshake timeout to SerialDevice if needed for later use?
-            # Or maybe SerialDevice reads it itself? For now, pass to relevant methods.
+        self.device = SerialDeviceController(self.app_config.serial)
 
         # Create visualization, passing the project root
         self.figures = AquaphotomicsFigures("Aquaphotomics Figures", project_root=self.project_root)
@@ -1440,24 +1437,63 @@ class AquaphotomicsApp(tk.Tk):
     #--------------------------------------------------------------------------
     # Device communication methods
     #--------------------------------------------------------------------------
+    def _reinit_device_with_port(self, port):
+        """Helper to (re)initialize the SerialDevice with the given port."""
+        print(f"[DEBUG] Reinitializing device with port: {port}")
+        # Disconnect current device if needed
+        if hasattr(self, 'device') and self.device and hasattr(self.device, 'serial_conn'):
+            try:
+                print(f"[DEBUG] Disconnecting current device on port: {getattr(self.device.serial_conn, 'com_port', None)}")
+                self.device.serial_conn.disconnect()
+            except Exception as e:
+                print(f"[ERROR] Exception during disconnect: {e}\n{traceback.format_exc()}")
+        # Recreate the SerialConnection and SerialDevice
+        if self.app_config.serial.use_mock_device:
+            print(f"[DEBUG] Creating DigitalTwinSerialDevice for port: {port}")
+            digital_twin = DigitalTwinSerialDevice(min_delay=0.05, max_delay=0.2)
+            serial_conn = SerialConnection(
+                com_port=port,
+                baud_rate=self.app_config.serial.baud_rate
+            )
+            serial_conn.serial_conn = digital_twin
+            self.device = SerialDevice(serial_conn)
+            print(f"[DEBUG] DigitalTwinSerialDevice and SerialDevice created for port: {port}")
+        else:
+            print(f"[DEBUG] Creating real SerialConnection for port: {port}")
+            serial_conn = SerialConnection(
+                com_port=port,
+                baud_rate=self.app_config.serial.baud_rate
+            )
+            self.device = SerialDeviceController(serial_conn)
+            print(f"[DEBUG] Real SerialDevice created for port: {port}")
+
     def check_com(self):
-        """Check if the selected COM port is valid."""
+        """Check if the selected COM port is valid and re-initialize the device."""
         port = self.com_var.get()
+        print(f"[DEBUG] check_com called with port: {port}")
         if not port:
             tk_msg.showerror("Error", "No COM port selected", parent=self)
+            print("[ERROR] No COM port selected in check_com")
             return
-            
+        self._reinit_device_with_port(port)
+        # Try to connect
         try:
-            if self.device_conn.connect(port):
+            print(f"[DEBUG] Attempting to connect to port: {port}")
+            result = self.device.serial_conn.connect(port, self.app_config.serial.baud_rate)
+            print(f"[DEBUG] connect() result: {result}")
+            if result:
                 tk_msg.showinfo("Success", f"Connected to device on {port}", parent=self)
+                print(f"[INFO] Connected to device on {port}")
                 return True
             else:
                 tk_msg.showerror("Error", f"Failed to connect to device on {port}", parent=self)
+                print(f"[ERROR] Failed to connect to device on {port}")
                 return False
         except Exception as e:
             tk_msg.showerror("Error", f"Connection error: {str(e)}", parent=self)
+            print(f"[ERROR] Exception during connect: {e}\n{traceback.format_exc()}")
             return False
-    
+
     def connect_device(self):
         """Open connection dialog to connect to a device."""
         dialog = ConnectionDialog(
@@ -1467,6 +1503,16 @@ class AquaphotomicsApp(tk.Tk):
             self.app_config.serial.use_mock_device
         )
         if dialog.result:
+            # Re-initialize device with the selected port
+            self._reinit_device_with_port(dialog.result)
+            # Try to connect
+            try:
+                if self.device.serial_conn.connect(dialog.result, self.app_config.serial.baud_rate):
+                    tk_msg.showinfo("Success", f"Connected to device on {dialog.result}", parent=self)
+                else:
+                    tk_msg.showerror("Error", f"Failed to connect to device on {dialog.result}", parent=self)
+            except Exception as e:
+                tk_msg.showerror("Error", f"Connection error: {str(e)}", parent=self)
             # Indicate connection status (could be real or mock)
             print(f"Connection established via dialog (Port: {dialog.result})")
             device_icon = self.icons.get('002.png')

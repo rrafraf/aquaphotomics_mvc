@@ -77,22 +77,14 @@ class SerialConnection:
         """Get list of available COM ports"""
         return [port.device for port in serial.tools.list_ports.comports()]
 
-    def get_log_table(self) -> str:
-        """Get formatted log table as string"""
-        if not self.communication_log:
-            return "No communication history"
-            
-        # Create header
-        table = "Timestamp | Sent | Received | Status\n"
-        table += "-" * 80 + "\n"
-        
-        # Add rows
-        for entry in self.communication_log:
-            status = "✓" if entry['success'] else "✗"
-            table += f"{entry['timestamp']} | {entry['sent']} | {entry['received']} | {status}\n"
-            
-        return table
-        
+    def scan_ports(self):
+        # If this is a digital twin/mock, return only the mock port name
+        if hasattr(self, 'serial_conn') and hasattr(self.serial_conn, '__class__') and \
+           self.serial_conn.__class__.__name__ == 'DigitalTwinSerialDevice':
+            return [getattr(self, 'com_port', 'MOCK_COM')]
+        # Otherwise, return real ports
+        return [port.device for port in serial.tools.list_ports.comports()]
+
     def wait_for_response(self, command_str=None):
         """
         Wait for a response from the serial device with timeout.
@@ -353,9 +345,50 @@ class SerialConnection:
 
     
     
-class SerialDevice:
-    def __init__(self, serial_conn: SerialConnection):
-        self.serial_conn = serial_conn
+class SerialDeviceController:
+    """
+    High-level controller for the serial device. Accepts a serial_config (from config_manager) for feature flags and mock port name.
+    Usage:
+        controller = SerialDeviceController(config.serial)
+        ports = controller.scan_ports()  # For UI dropdown
+        controller.connect(selected_port, selected_baud_rate)
+    """
+    def __init__(self, serial_config):
+        self.serial_config = serial_config
+        self.serial_conn = None
+        self.connected_port = None
+        self.connected_baud = None
+
+    def scan_ports(self):
+        # If using mock, return only the mock port name
+        if getattr(self.serial_config, 'use_mock_device', False):
+            return [getattr(self.serial_config, 'mock_port_name', 'MOCK_COM')]
+        # Otherwise, return real ports
+        import serial.tools.list_ports
+        return [port.device for port in serial.tools.list_ports.comports()]
+
+    def connect(self, port, baud_rate=115200):
+        """Create and open a connection to the given port (real or mock)."""
+        # Disconnect any existing connection
+        if self.serial_conn:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+        if getattr(self.serial_config, 'use_mock_device', False):
+            from serial_comm.digital_twin import DigitalTwinSerialDevice
+            self.serial_conn = DigitalTwinSerialDevice(min_delay=0.05, max_delay=0.2)
+            self.serial_conn.is_open = True
+        else:
+            import serial
+            self.serial_conn = serial.Serial(
+                port=port,
+                baudrate=baud_rate,
+                timeout=getattr(self.serial_config, 'timeout', 1.0)
+            )
+        self.connected_port = port
+        self.connected_baud = baud_rate
+        return True
 
     def _handshake_successful(self):
         self.serial_conn.flushInput()

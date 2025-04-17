@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 import sys
 import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from src.aquaphotomics.aquaphotomics_app_monolith import AquaphotomicsApp, VERSION_STRING
 
